@@ -243,7 +243,7 @@ mod tests {
     use serde_json::{from_value as from_json_value, json, to_value as to_json_value};
 
     use super::{
-        EventMatchCondition, PushCondition, PushRulesEvent, RoomMemberCountCondition,
+        EventMatchCondition, PushCondition, RoomMemberCountCondition,
         SenderNotificationPermissionCondition,
     };
     use crate::EventJson;
