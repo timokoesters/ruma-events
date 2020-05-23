@@ -151,6 +151,28 @@ impl RoomEventContent for AnyStateEventContent {}
 
 impl StateEventContent for AnyStateEventContent {}
 
+impl<C> TryFromRaw for StateEvent<C>
+where
+    C: StateEventContent + TryFromRaw,
+    C::Raw: StateEventContent,
+{
+    type Raw = StateEvent<C::Raw>;
+    type Err = C::Err;
+
+    fn try_from_raw(raw: Self::Raw) -> Result<Self, Self::Err> {
+        Ok(Self {
+            content: C::try_from_raw(raw.content)?,
+            event_id: raw.event_id,
+            sender: raw.sender,
+            origin_server_ts: raw.origin_server_ts,
+            room_id: raw.room_id,
+            state_key: raw.state_key,
+            prev_content: raw.prev_content.map(C::try_from_raw).transpose()?,
+            unsigned: raw.unsigned,
+        })
+    }
+}
+
 impl<C: StateEventContent> Serialize for StateEvent<C> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
