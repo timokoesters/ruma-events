@@ -5,7 +5,9 @@
 //! without the need to create a room.
 
 use ruma_identifiers::UserId;
-use serde::{de::DeserializeOwned, Deserialize, Deserializer, Serialize};
+use serde::{
+    de::DeserializeOwned, ser::SerializeStruct, Deserialize, Deserializer, Serialize, Serializer,
+};
 use serde_json::Value as JsonValue;
 
 use crate::{
@@ -25,6 +27,7 @@ use crate::{
 /// To-device versions of events that will appear in the to-device part of a
 /// sync response.
 #[derive(Clone, Debug, Serialize)]
+#[serde(untagged)]
 #[allow(clippy::large_enum_variant)]
 pub enum AnyToDeviceEvent {
     /// To-device version of the "m.dummy" event.
@@ -51,7 +54,7 @@ pub enum AnyToDeviceEvent {
     KeyVerificationRequest(ToDeviceVerificationRequest),
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug)]
 /// To-device event.
 pub struct ToDeviceEvent<C> {
     /// The unique identifier for the user who sent this event.
@@ -129,6 +132,19 @@ where
             content: C::try_from_raw(raw.content)?,
             sender: raw.sender,
         })
+    }
+}
+
+impl<C: Serialize> Serialize for ToDeviceEvent<C> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut s = serializer.serialize_struct("ToDeviceEvent", 3)?;
+        s.serialize_field("type", &self.event_type())?;
+        s.serialize_field("sender", &self.sender)?;
+        s.serialize_field("content", &self.content)?;
+        s.end()
     }
 }
 
@@ -262,18 +278,45 @@ mod tests {
     };
 
     use ruma_identifiers::{RoomId, UserId};
-    use serde_json::{from_value as from_json_value, json};
+    use serde_json::{from_value as from_json_value, json, to_value as to_json_value};
 
-    use super::AnyToDeviceEvent;
+    use super::{AnyToDeviceEvent, ToDeviceEvent};
     use crate::{
         key::verification::{
             cancel::CancelCode, start::StartEventContent, HashAlgorithm, KeyAgreementProtocol,
             MessageAuthenticationCode, ShortAuthenticationString, VerificationMethod,
         },
         room::encrypted::EncryptedEventContent,
+        room_key::RoomKeyEventContent,
         room_key_request::Action,
         Algorithm, Empty, EventJson,
     };
+
+    #[test]
+    fn serialization() {
+        let ev = AnyToDeviceEvent::RoomKey(ToDeviceEvent {
+            sender: UserId::try_from("@example:example.org").unwrap(),
+            content: RoomKeyEventContent {
+                algorithm: Algorithm::MegolmV1AesSha2,
+                room_id: RoomId::try_from("!testroomid:example.org").unwrap(),
+                session_id: "SessId".into(),
+                session_key: "SessKey".into(),
+            },
+        });
+
+        assert_eq!(
+            to_json_value(ev).unwrap(),
+            json!({
+                "type": "m.room_key",
+                "content": {
+                    "algorithm": "m.megolm.v1.aes-sha2",
+                    "room_id": "!testroomid:example.org",
+                    "session_id": "SessId",
+                    "session_key": "SessKey",
+                },
+            })
+        );
+    }
 
     macro_rules! deserialize {
         ($source:ident, $($target:tt)*) => {{
